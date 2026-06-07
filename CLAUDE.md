@@ -40,8 +40,10 @@ This is the prime directive for this repo. **Never claim behaviour the code does
   mapping and the verified ownership invariants are in the Code–Doc Alignment report in
   [`docs/PUBLIC-READINESS-CHECKLIST.md`](docs/PUBLIC-READINESS-CHECKLIST.md).
 - The **confirmation/approval subsystem** (`rules_engine`, `approval_state`,
-  `waiting_for_approval`, `/confirm`, `/reject`, continuation links) is **documented but not
-  implemented** in this snapshot. Keep it labelled as roadmap, not current behaviour.
+  `waiting_for_approval`, `/confirm`, `/reject`) is **implemented** behind the single-writer
+  rules — only `job_service` writes `approval_state`/status, only `event_log_service` writes the
+  confirmation events. **Continuation/parent Job links** (`continuation_of_job_id` /
+  `parent_job_id`) remain roadmap — keep those labelled as not-yet-implemented.
 - Every Mermaid block must render and every internal link must resolve.
 
 ## Privacy guardrails

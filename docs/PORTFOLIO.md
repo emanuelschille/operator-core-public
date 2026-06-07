@@ -30,8 +30,8 @@ This repository shows how someone designs and operates a real system rather than
 - **External system integration** — a messaging transport, an operational state-layer
   boundary, and a model provider, each behind a clear service boundary.
 - **Human-in-the-loop design** — the operator initiates every action and nothing runs
-  autonomously; each action is an auditable Job/Run/Event. (A confirmation/approval gate is a
-  documented roadmap item, not yet implemented — stated honestly rather than overclaimed.)
+  autonomously; each action is an auditable Job/Run/Event, and high-impact commands pass through
+  a real confirmation gate (`/confirm` · `/reject`) before any write.
 - **Quality and testing discipline** — a broad `tests/` tree (92 test modules; 1004 passing)
   covering routing, formatting, integrations, and the proactive layer, green under CI.
 - **Documentation and architecture discipline** — written-down architecture, module
@@ -63,10 +63,10 @@ For a guided 5-minute walkthrough, see `docs/EMPLOYER-DEMO.md`.
 
 ## What could be improved next (honest)
 
-- **Confirmation/approval subsystem:** the documented confirmation gate (`/confirm`, `/reject`,
-  a `rules_engine`, `approval_state`, continuation links) is **designed but not implemented** in
-  this snapshot. It is the main code/doc gap, called out explicitly in
-  `docs/PUBLIC-READINESS-CHECKLIST.md` rather than hidden.
+- **Continuation/parent Job links:** `continuation_of_job_id` / `parent_job_id` remain a roadmap
+  item — the confirmation gate (`rules_engine`, `approval_state`, `/confirm` · `/reject`) is now
+  **implemented and tested**, but reply→prior-Job linking is left as honest roadmap rather than
+  half-built. See `docs/PUBLIC-READINESS-CHECKLIST.md`.
 - **Test/code drift:** 38 tests assert behaviour the code has since refactored and are marked
   `xfail` with reasons; reconciling them is a tracked cleanup item. (CI is wired up and green —
   see the README badge.)

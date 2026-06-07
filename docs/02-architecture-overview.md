@@ -106,6 +106,7 @@ transitions are enforced:
 stateDiagram-v2
     [*] --> pending
     pending --> in_progress
+    pending --> waiting_for_approval
     pending --> cancelled
     pending --> failed
     in_progress --> waiting_for_input
@@ -115,14 +116,20 @@ stateDiagram-v2
     waiting_for_input --> in_progress
     waiting_for_input --> cancelled
     waiting_for_input --> failed
+    waiting_for_approval --> in_progress
+    waiting_for_approval --> rejected
+    waiting_for_approval --> cancelled
+    waiting_for_approval --> failed
     completed --> [*]
     failed --> [*]
     cancelled --> [*]
+    rejected --> [*]
 ```
 
-> **Honesty note.** There is intentionally **no** `waiting_for_approval` state and **no**
-> `approval_state` field in this snapshot. A confirmation/approval subsystem is described in the
-> [Status and roadmap](#status-and-roadmap) section as *planned*, not as current behaviour.
+A high-impact request enters `waiting_for_approval` with `approval_state = pending`; on
+`/confirm` it resumes through `in_progress` to `completed`, on `/reject` it ends in the terminal
+`rejected` state. `approval_state` (`not_required | pending | approved | rejected`) is a separate
+field on the `Job`, owned by `job_service`.
 
 ## State authority model
 
@@ -130,6 +137,7 @@ Two distinct classes of authoritative state, each with a single writer.
 
 ### Authoritative workflow fields
 - `Job.status` (`JobStatus`) — owned by `job_service`.
+- `Job.approval_state` (`ApprovalState`) — owned by `job_service`.
 - `Run.status` (`RunStatus`) and run timing (`started_at`/`finished_at`/`duration_ms`) — owned
   by `run_service`.
 - The `Events` table — owned by `event_log_service`.
@@ -175,7 +183,8 @@ breaks.
 
 ## Canonical execution flow
 
-The real path for a normal executable request (no confirmation, matching the snapshot):
+The real path for a normal (non-high-impact) executable request; high-impact commands take the
+[confirmation flow](#confirmation-flow) instead:
 
 ```mermaid
 sequenceDiagram
@@ -238,6 +247,43 @@ sequenceDiagram
     FMT-->>FMT: render "failed" state (no completion claim)
 ```
 
+### Confirmation flow
+
+High-impact commands (declared in `rules_engine`) are gated: the Job parks for approval and **no
+business write runs** until the operator confirms.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant OP as Operator
+    participant RF as RequestFlowService
+    participant RE as rules_engine
+    participant EX as ExecutionService
+    participant JS as job_service
+    participant EL as event_log_service
+    participant LN as lane
+
+    OP->>RF: /vollauto …
+    RF->>EX: execute_request()
+    EX->>RE: requires_confirmation("vollauto")?
+    RE-->>EX: true
+    EX->>JS: mark_waiting_for_approval (status + approval_state=pending)
+    EX->>EL: confirmation_requested
+    EX-->>RF: waiting_for_approval (no run, no write)
+    RF-->>OP: "⏳ Bestätigung erforderlich"
+
+    OP->>RF: /confirm
+    RF->>EX: resume_confirmed_job(job_id)
+    EX->>JS: mark_approved (approval_state=approved)
+    EX->>LN: execute protected action (new run)
+    EX->>JS: mark_completed
+    EX->>EL: confirmation_resolved
+    EX-->>RF: completed
+    RF-->>OP: confirmed result
+
+    Note over OP,EL: /reject instead → mark_rejected (terminal), confirmation_resolved, no write
+```
+
 ## Consolidated data model
 
 Workflow records (`core/backbone/models.py`) and the business records they reference:
@@ -249,6 +295,7 @@ classDiagram
       +str project_key
       +str job_type
       +JobStatus status
+      +ApprovalState approval_state
       +str title
       +str latest_run_id
       +str result_summary
@@ -324,7 +371,7 @@ Every major choice has a cost; naming the cost is the point.
 | **Workflow state kept separate from Airtable** | Business state and control trail evolve independently | Two stores to reason about; cross-references instead of one table |
 | **Zero runtime dependencies** (stdlib HTTP) | Trivial to audit, install, and run; no supply-chain surface | Hand-rolled transport/JSON handling instead of mature client libraries |
 | **Repository abstraction for backbone** (in-memory default) | Tests run with no external services; backbone is storage-agnostic | The persistent backbone binding is not part of this snapshot |
-| **Confirmation modelled in docs before code** | Captures the intended safety design up front | Risk of doc/code drift — mitigated here by an explicit *not-implemented* status |
+| **Confirmation as a synchronous gate** in the execution path | One enforced stop before any high-impact write; impossible to bypass from a lane | The high-impact set is an explicit allow-list — it gates only what is declared, so coverage is exactly as broad as the policy |
 
 ## Responsibility matrix
 
@@ -360,6 +407,7 @@ truth; documented names that differ from the code are reconciled here.
 | `event_log_service` | [`../src/operator_core/core/backbone/event_log_service.py`](../src/operator_core/core/backbone/event_log_service.py) | append-only `Events` |
 | `airtable_service` | [`../src/operator_core/integrations/airtable_service.py`](../src/operator_core/integrations/airtable_service.py) | Airtable persistence adapter |
 | llm adapters | [`../src/operator_core/integrations/anthropic_service.py`](../src/operator_core/integrations/anthropic_service.py), [`openai_service.py`](../src/operator_core/integrations/openai_service.py) | structured model calls (doc name: `llm_service`) |
+| `rules_engine` | [`../src/operator_core/core/rules_engine.py`](../src/operator_core/core/rules_engine.py) | confirmation policy for high-impact actions |
 | `response_formatter` | [`../src/operator_core/core/response_formatter/service.py`](../src/operator_core/core/response_formatter/service.py) | state-derived responses |
 | `analysis_foundation` | [`../src/operator_core/core/analysis_foundation/service.py`](../src/operator_core/core/analysis_foundation/service.py) | AnalysisSnapshot/WriterBrief/EvidencePack |
 | lane `content_ops` | [`../src/operator_core/core/content_ops/service.py`](../src/operator_core/core/content_ops/service.py) | content ideas & drafts |
@@ -374,6 +422,8 @@ truth; documented names that differ from the code are reconciled here.
 [run lifecycle](../tests/core/backbone/test_run_service.py) ·
 [events](../tests/core/backbone/test_event_log_service.py) ·
 [execution orchestration](../tests/core/backbone/test_execution_service.py) ·
+[confirmation gate](../tests/core/backbone/test_confirmation_gate.py) ·
+[confirmation flow](../tests/core/request_flow/test_confirmation_flow.py) ·
 [request flow](../tests/core/request_flow/test_service.py) ·
 [formatting](../tests/core/response_formatter/test_response_formatter_service.py) ·
 [proactive layer](../tests/proactive/test_checker.py)
@@ -386,15 +436,21 @@ Honest separation of what the snapshot implements from what the docs describe as
 - Jobs / Runs / Events as a first-class, enforced state machine.
 - Single-writer ownership for Job state, Run state, Events, the project key, and the Airtable
   write boundary.
+- **Confirmation / approval subsystem:** `rules_engine` policy, the `waiting_for_approval` gate
+  with `approval_state`, and `/confirm` · `/reject` resolution — all behind the single-writer
+  rules and covered by tests
+  ([rules_engine](../tests/core/test_rules_engine.py),
+  [gate](../tests/core/backbone/test_confirmation_gate.py),
+  [flow](../tests/core/request_flow/test_confirmation_flow.py)).
 - Shared-core vs lane isolation (lanes never touch workflow state).
 - Telegram intake → routing → execution → state-derived response.
 - A zero-runtime-dependency core with a broad, green test suite.
 
 **Documented as architecture, not implemented in this snapshot** *(planned)*
-- **Confirmation / approval subsystem:** `waiting_for_approval`, `approval_state`, `/confirm`,
-  `/reject`, and a `rules_engine` policy layer. No code path exists yet.
 - **Continuation & parent links:** `continuation_of_job_id` / `parent_job_id` are not on the
-  `Job` model yet.
+  `Job` model. A clean implementation needs reply→prior-Job correlation that the current
+  reply-handling (message/proposal stores) does not yet track, so this is left as roadmap rather
+  than half-built.
 - **Multi-source project resolution:** reply-metadata vs explicit vs chat-level context and
   cross-project conflict blocking; today resolution is from runtime configuration.
 - **Literal semantic-field ownership:** `content_stage` / `monetization_stage` /
