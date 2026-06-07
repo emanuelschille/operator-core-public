@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Any
 from uuid import uuid4
 
-from .models import Job, RequestContext, utc_now
+from .models import ApprovalState, Job, RequestContext, utc_now
 from .repositories import JobRepository
 from .statuses import JobStatus, ensure_job_transition
 
@@ -79,6 +79,29 @@ class JobService:
         if latest_run_id is not None:
             updates["latest_run_id"] = latest_run_id
         return self._set_status(job_id, JobStatus.FAILED, **updates)
+
+    def mark_waiting_for_approval(self, job_id: str) -> Job:
+        """Park a Job pending human confirmation (sets status + approval_state)."""
+        return self._set_status(
+            job_id,
+            JobStatus.WAITING_FOR_APPROVAL,
+            approval_state=ApprovalState.PENDING,
+        )
+
+    def mark_approved(self, job_id: str) -> Job:
+        """Record approval without changing lifecycle status; execution resumes separately."""
+        job = self.get_job(job_id)
+        job.approval_state = ApprovalState.APPROVED
+        job.updated_at = utc_now()
+        return self.repository.update(job)
+
+    def mark_rejected(self, job_id: str) -> Job:
+        """Resolve a pending Job as rejected (terminal, no execution)."""
+        return self._set_status(
+            job_id,
+            JobStatus.REJECTED,
+            approval_state=ApprovalState.REJECTED,
+        )
 
     def attach_related_entity(self, job_id: str, entity_type: str, entity_id: str) -> Job:
         job = self.get_job(job_id)

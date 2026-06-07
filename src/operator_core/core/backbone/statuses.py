@@ -11,9 +11,11 @@ class JobStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     WAITING_FOR_INPUT = "waiting_for_input"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    REJECTED = "rejected"
 
 
 class RunStatus(str, Enum):
@@ -25,7 +27,12 @@ class RunStatus(str, Enum):
 
 
 _ALLOWED_JOB_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
-    JobStatus.PENDING: {JobStatus.IN_PROGRESS, JobStatus.CANCELLED, JobStatus.FAILED},
+    JobStatus.PENDING: {
+        JobStatus.IN_PROGRESS,
+        JobStatus.WAITING_FOR_APPROVAL,
+        JobStatus.CANCELLED,
+        JobStatus.FAILED,
+    },
     JobStatus.IN_PROGRESS: {
         JobStatus.WAITING_FOR_INPUT,
         JobStatus.COMPLETED,
@@ -37,9 +44,16 @@ _ALLOWED_JOB_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
         JobStatus.CANCELLED,
         JobStatus.FAILED,
     },
+    JobStatus.WAITING_FOR_APPROVAL: {
+        JobStatus.IN_PROGRESS,
+        JobStatus.REJECTED,
+        JobStatus.CANCELLED,
+        JobStatus.FAILED,
+    },
     JobStatus.COMPLETED: set(),
     JobStatus.FAILED: set(),
     JobStatus.CANCELLED: set(),
+    JobStatus.REJECTED: set(),
 }
 
 _ALLOWED_RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {

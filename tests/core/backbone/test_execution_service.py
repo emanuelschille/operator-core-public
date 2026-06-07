@@ -531,7 +531,10 @@ def test_execution_service_foundation_backed_vollauto_persists_evidence_and_trac
     req.command_name = "vollauto"
     req.command_body = "morgenroutine"
 
-    result = service.execute_request(req, job_type="content_draft", title="Voll Auto")
+    # `vollauto` is confirmation-gated: the request parks for approval, then resumes.
+    gated = service.execute_request(req, job_type="content_draft", title="Voll Auto")
+    assert gated.job_status == JobStatus.WAITING_FOR_APPROVAL
+    result = service.resume_confirmed_job(gated.job_id)
 
     assert result.job_status == JobStatus.COMPLETED
     assert result.output_snapshot["action_type"] == "vollauto"
@@ -545,7 +548,10 @@ def test_execution_service_foundation_backed_vollauto_persists_evidence_and_trac
     assert result.output_snapshot["evaluation_case"]["run_id"] == result.run_id
     job_events = event_repo.list_for_entity("everydayengel", "job", result.job_id)
     run_events = event_repo.list_for_entity("everydayengel", "run", result.run_id)
-    assert [event.event_type for event in job_events][-1] == "content.vollauto_generated"
+    job_event_types = [event.event_type for event in job_events]
+    # the lane's domain event is recorded; confirmation resolution closes the job trail
+    assert "content.vollauto_generated" in job_event_types
+    assert job_event_types[-1] == "confirmation_resolved"
     assert [event.event_type for event in run_events][-3:] == [
         "analysis.snapshot_persisted",
         "analysis.evidence_pack_persisted",

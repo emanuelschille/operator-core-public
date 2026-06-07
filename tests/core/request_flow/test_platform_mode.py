@@ -123,7 +123,11 @@ def test_platform_mode_callback_clear_removes_mode() -> None:
 
 
 def test_content_command_uses_stored_platform_mode() -> None:
-    """With platform mode set to TikTok, /vollauto without prefix resolves to tiktok."""
+    """With platform mode set to TikTok, a content command without prefix resolves to tiktok.
+
+    Uses `/draft` (a content command that is not confirmation-gated, unlike `/vollauto`) so the
+    test stays focused on platform-mode resolution rather than the confirmation gate.
+    """
     from operator_core.core.content_ops.models import ContentOpResult
 
     class _ContentOpsStub:
@@ -149,6 +153,9 @@ def test_content_command_uses_stored_platform_mode() -> None:
         def can_use_foundation_backed_vollauto(self):
             return False
 
+        def can_use_foundation_backed_draft(self):
+            return False
+
         def resolve_platform_hint(self, command_body):
             return "", command_body
 
@@ -164,7 +171,7 @@ def test_content_command_uses_stored_platform_mode() -> None:
     exec_svc.content_ops_service = stub  # type: ignore[assignment]
 
     svc = RequestFlowService(exec_svc, platform_mode_store=store)
-    result = svc.handle_telegram_entry_handoff(_message_handoff("/vollauto morgenroutine"))
+    result = svc.handle_telegram_entry_handoff(_message_handoff("/draft morgenroutine"))
 
     assert result.was_executed is True
     assert result.decision == "executed"
