@@ -90,5 +90,5 @@ def test_funnel_ops_result_is_formatter_ready() -> None:
     assert formatted.reply_to_message_id == 3901
     assert "✅ Anfrage verarbeitet" in formatted.text
     assert "Befehl: routing_hint" in formatted.text
-    assert "Lane: funnel_ops" in formatted.text
+    assert "Bereich: funnel_ops" in formatted.text
     assert "Ergebnis: Routing-Hint-Stub vorbereitet." in formatted.text

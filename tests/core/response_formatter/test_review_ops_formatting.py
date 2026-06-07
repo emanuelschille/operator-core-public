@@ -90,5 +90,5 @@ def test_review_ops_result_is_formatter_ready() -> None:
     assert formatted.reply_to_message_id == 3701
     assert "✅ Anfrage verarbeitet" in formatted.text
     assert "Befehl: pattern_check" in formatted.text
-    assert "Lane: review_ops" in formatted.text
+    assert "Bereich: review_ops" in formatted.text
     assert "Ergebnis: Pattern-Check-Stub vorbereitet." in formatted.text

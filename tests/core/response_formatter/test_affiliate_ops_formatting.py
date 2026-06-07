@@ -90,5 +90,5 @@ def test_affiliate_ops_result_is_formatter_ready() -> None:
     assert formatted.reply_to_message_id == 3501
     assert "✅ Anfrage verarbeitet" in formatted.text
     assert "Befehl: cta_direction" in formatted.text
-    assert "Lane: affiliate_ops" in formatted.text
+    assert "Bereich: affiliate_ops" in formatted.text
     assert "Ergebnis: CTA-Direction-Stub vorbereitet." in formatted.text

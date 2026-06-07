@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from operator_core.projects.docs import (
@@ -65,7 +67,14 @@ class TestLoadAll:
             assert doc.project_key == "everydayengel"
 
 
+_PROJECT_DATA = Path(__file__).resolve().parents[2] / "projects"
+
+
 class TestAvailableDocTypes:
+    @pytest.mark.skipif(
+        not (_PROJECT_DATA.is_dir() and any(_PROJECT_DATA.iterdir())),
+        reason="private project fixtures (projects/<key>/) excluded from public snapshot",
+    )
     def test_everydayengel_has_all_four_types(self, loader: ProjectDocsLoader) -> None:
         available = loader.available_doc_types("everydayengel")
         assert set(available) == set(ALL_DOC_TYPES)
