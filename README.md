@@ -80,4 +80,4 @@ by its short codename only; none of its business or strategy content is reproduc
 
 No open-source license is granted. This repository is shared as a **portfolio /
 viewing snapshot**: **all rights reserved, portfolio use only.** Please do not reuse or
-redistribute the code without permission.
+redistribute the code without permission. See [`LICENSE`](LICENSE) for the exact terms.
