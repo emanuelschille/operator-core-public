@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from operator_core.core.backbone.execution_service import ExecutionService
 from operator_core.core.backbone.models import RequestContext
+from operator_core.core.backbone.statuses import JobStatus
 from operator_core.core.content_ops.correction_capture import (
     CorrectionCaptureStore,
     CorrectionReasonTag,
@@ -329,6 +330,9 @@ class RequestFlowService:
         self._pending_platform_inputs: dict[str, PendingPlatformSelection] = {}
         self._pending_proposal_replace: dict[str, PendingProposalReplace] = {}
         self._pending_plan_field_replace: dict[str, PendingPlanFieldReplace] = {}
+        # job_id of a Job parked in waiting_for_approval, keyed by (chat, user),
+        # awaiting a /confirm or /reject from the same operator.
+        self._pending_confirmations: dict[str, str] = {}
 
     def register_daily_plan_message(
         self,
@@ -369,6 +373,22 @@ class RequestFlowService:
                                 request_context=request_context,
                                 proposal=proposal,
                             )
+
+        # Job-level confirmation gate: a /confirm or /reject from the same operator
+        # resolves a Job previously parked in waiting_for_approval by the gate.
+        if routed_command.is_command:
+            cmd = (routed_command.command_name or "").strip().lower()
+            if cmd in ("confirm", "reject"):
+                pending_job_id = self._pending_confirmations.get(
+                    self._confirmation_key(request_context)
+                )
+                if pending_job_id is not None:
+                    return self._handle_job_confirmation(
+                        entry_handoff=entry_handoff,
+                        request_context=request_context,
+                        action=cmd,
+                        job_id=pending_job_id,
+                    )
 
         if not routed_command.is_command:
             _text_key = self._build_text_action_key(request_context)
@@ -513,6 +533,14 @@ class RequestFlowService:
             title=title,
             priority=0,
         )
+        if execution_result.job_status == JobStatus.WAITING_FOR_APPROVAL:
+            return self._build_confirmation_required_result(
+                entry_handoff=entry_handoff,
+                request_context=request_context,
+                command_name=command_name,
+                command_body=command_body,
+                execution_result=execution_result,
+            )
         output_snapshot = dict(execution_result.output_snapshot or {})
         if output_snapshot.get("lane_name") == "content_ops":
             proposal = self._build_content_proposal(
@@ -567,6 +595,93 @@ class RequestFlowService:
             request_context=request_context,
             decision="executed",
             was_executed=True,
+            execution_result=execution_result,
+            formatter_payload=formatter_payload,
+        )
+
+    def _confirmation_key(self, request_context: RequestContext) -> str:
+        return f"{request_context.source_chat_id or ''}:{request_context.source_user_id or ''}"
+
+    def _build_confirmation_required_result(
+        self,
+        *,
+        entry_handoff: TelegramEntryHandoff,
+        request_context: RequestContext,
+        command_name: str,
+        command_body: str,
+        execution_result,
+    ) -> RequestFlowResult:
+        """Surface a gated Job and remember it so /confirm or /reject can resolve it."""
+        self._pending_confirmations[self._confirmation_key(request_context)] = execution_result.job_id
+        formatter_payload = FormatterPayload(
+            project_key=entry_handoff.project_context.project_key,
+            project_display_name=entry_handoff.project_context.display_name,
+            command_name=command_name,
+            command_body=command_body,
+            response_chat_id=entry_handoff.response_shell.chat_id,
+            response_reply_to_message_id=entry_handoff.response_shell.reply_to_message_id,
+            decision="confirmation_required",
+            message_text="Bestätigung erforderlich. Antworte mit /confirm oder /reject.",
+            execution_summary={
+                "job_id": execution_result.job_id,
+                "job_status": execution_result.job_status.value,
+                "approval_state": execution_result.approval_state.value,
+                "event_count": execution_result.event_count,
+            },
+        )
+        return RequestFlowResult(
+            entry_handoff=entry_handoff,
+            request_context=request_context,
+            decision="confirmation_required",
+            was_executed=False,
+            execution_result=execution_result,
+            formatter_payload=formatter_payload,
+        )
+
+    def _handle_job_confirmation(
+        self,
+        *,
+        entry_handoff: TelegramEntryHandoff,
+        request_context: RequestContext,
+        action: str,
+        job_id: str,
+    ) -> RequestFlowResult:
+        """Resolve a parked Job: approve+resume execution, or reject (no write)."""
+        self._pending_confirmations.pop(self._confirmation_key(request_context), None)
+        if action == "confirm":
+            execution_result = self.execution_service.resume_confirmed_job(job_id)
+            decision = "confirmed"
+            message_text = "Bestätigt und ausgeführt."
+            was_executed = True
+        else:
+            execution_result = self.execution_service.reject_job(job_id)
+            decision = "rejected"
+            message_text = "Abgelehnt. Es wurde nichts ausgeführt."
+            was_executed = False
+        formatter_payload = FormatterPayload(
+            project_key=entry_handoff.project_context.project_key,
+            project_display_name=entry_handoff.project_context.display_name,
+            command_name=action,
+            command_body="",
+            response_chat_id=entry_handoff.response_shell.chat_id,
+            response_reply_to_message_id=entry_handoff.response_shell.reply_to_message_id,
+            decision=decision,
+            message_text=message_text,
+            execution_summary={
+                "job_id": execution_result.job_id,
+                "run_id": execution_result.run_id,
+                "job_status": execution_result.job_status.value,
+                "approval_state": execution_result.approval_state.value,
+                "event_count": execution_result.event_count,
+                "result_summary": execution_result.result_summary,
+                "output_snapshot": execution_result.output_snapshot or {},
+            },
+        )
+        return RequestFlowResult(
+            entry_handoff=entry_handoff,
+            request_context=request_context,
+            decision=decision,
+            was_executed=was_executed,
             execution_result=execution_result,
             formatter_payload=formatter_payload,
         )

@@ -41,6 +41,10 @@ class ResponseFormatterService:
             text = self._format_unknown_command(payload)
         elif payload.decision == "not_a_command":
             text = self._format_non_command(payload)
+        elif payload.decision == "confirmation_required":
+            text = self._format_confirmation_required(payload)
+        elif payload.decision == "rejected":
+            text = self._format_rejected(payload)
         else:
             text = self._format_not_executed(payload)
 
@@ -320,6 +324,28 @@ class ResponseFormatterService:
             lines.append(f"Befehl: {payload.command_name}")
         if payload.message_text:
             lines.append(f"Hinweis: {payload.message_text}")
+        return "\n".join(lines)
+
+    def _format_confirmation_required(self, payload: FormatterPayload) -> str:
+        lines = [
+            "⏳ Bestätigung erforderlich",
+            f"Projekt: {payload.project_display_name}",
+        ]
+        if payload.command_name:
+            lines.append(f"Befehl: {payload.command_name}")
+        lines.append(
+            payload.message_text
+            or "Diese Aktion braucht eine Freigabe. Antworte mit /confirm oder /reject."
+        )
+        return "\n".join(lines)
+
+    def _format_rejected(self, payload: FormatterPayload) -> str:
+        lines = [
+            "❌ Abgelehnt",
+            f"Projekt: {payload.project_display_name}",
+        ]
+        if payload.message_text:
+            lines.append(payload.message_text)
         return "\n".join(lines)
 
     @staticmethod
