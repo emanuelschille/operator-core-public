@@ -29,8 +29,8 @@ initiates every action.
 - No multi-provider model routing.
 - No SaaS multi-tenancy, billing, or public sign-up.
 - No autonomous, operator-absent execution — the operator triggers every action.
-- A confirmation/approval gate (`/confirm`, `/reject`) is **designed but not yet implemented**;
-  see the Status and roadmap in [`02-architecture-overview.md`](02-architecture-overview.md).
+- High-impact commands pass through a **confirmation gate** (`/confirm`, `/reject`); see the
+  [confirmation flow](02-architecture-overview.md#confirmation-flow).
 
 ## Deeper reading (included in this snapshot)
 

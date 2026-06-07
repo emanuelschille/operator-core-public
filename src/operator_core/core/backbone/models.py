@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
 
 from .statuses import JobStatus, RunStatus
 
 
 JsonDict = dict[str, Any]
+
+
+class ApprovalState(str, Enum):
+    """Confirmation/approval state of a Job (orthogonal to its lifecycle status)."""
+
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 def utc_now() -> datetime:
@@ -38,6 +48,7 @@ class Job:
     title: str
     input_text: str | None
     context_json: JsonDict
+    approval_state: ApprovalState = ApprovalState.NOT_REQUIRED
     related_entity_type: str | None = None
     related_entity_id: str | None = None
     priority: int = 0

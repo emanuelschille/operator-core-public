@@ -25,8 +25,8 @@ funnel, and review operations.
 - **External-system integration design** — a messaging transport, an operational state
   layer, and a model provider, each behind a clear service boundary.
 - **Human-in-the-loop design** — the operator initiates every action; nothing runs
-  autonomously, and each action is an auditable Job/Run/Event. (A confirmation/approval gate is
-  designed and documented as a roadmap item — see the architecture's Status and roadmap.)
+  autonomously, and each action is an auditable Job/Run/Event. High-impact commands pass through
+  a real confirmation gate (`/confirm` · `/reject`) before any write.
 - **Testing and documentation discipline** — a large `tests/` tree and a numbered,
   written-down architecture.
 
@@ -65,7 +65,7 @@ python -m pytest -q
 ## Honest status
 
 This is a **public portfolio snapshot**. The test suite is **reliably collectable and green**:
-`python -m pytest -q` reports **1004 passed, 122 skipped, 38 xfailed (exit 0)**, and CI runs it
+`python -m pytest -q` reports **1026 passed, 122 skipped, 38 xfailed (exit 0)**, and CI runs it
 on every push and PR across Python 3.11 and 3.12 (see the badge above).
 
 The skips and xfails are deliberate and documented, not hidden failures:
@@ -73,11 +73,14 @@ The skips and xfails are deliberate and documented, not hidden failures:
 - **122 skipped** — tests that need the private `projects/<key>/` business fixtures, which are
   intentionally excluded from this snapshot. They run normally if that data is present.
 - **38 xfailed** — tests asserting behaviour the code has since refactored (tracked test/code
-  drift), registered with reasons rather than rewritten to rubber-stamp current output.
+  drift), registered with reasons rather than rewritten to rubber-stamp current output. (None of
+  these concern the confirmation subsystem.)
 
-One honest architectural gap remains: the **confirmation/approval subsystem** is documented but
-not implemented in this snapshot. The full picture — the Code–Doc Alignment report and the exact
-remaining items — is in [`docs/PUBLIC-READINESS-CHECKLIST.md`](docs/PUBLIC-READINESS-CHECKLIST.md).
+The **confirmation/approval subsystem is now implemented** (a `rules_engine` policy, a
+`waiting_for_approval` gate with `approval_state`, and `/confirm` · `/reject` resolution, all
+tested). The remaining honest roadmap item is **continuation/parent Job links**. The full
+picture — the Code–Doc Alignment report and the exact remaining items — is in
+[`docs/PUBLIC-READINESS-CHECKLIST.md`](docs/PUBLIC-READINESS-CHECKLIST.md).
 
 ## What is and isn't in this snapshot
 

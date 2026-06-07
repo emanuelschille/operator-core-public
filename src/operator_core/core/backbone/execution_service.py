@@ -12,9 +12,11 @@ from operator_core.core.knowledge_ops.service import KnowledgeOpsService
 from operator_core.core.review_ops.service import ReviewOpsService
 from operator_core.integrations.analysis_foundation_persistence import AnalysisFoundationPersistenceService
 
+from operator_core.core.rules_engine import requires_confirmation
+
 from .event_log_service import EventLogService
 from .job_service import JobService
-from .models import Job, RequestContext, Run
+from .models import ApprovalState, Job, RequestContext, Run
 from .run_service import RunService
 from .statuses import JobStatus
 
@@ -58,6 +60,7 @@ class ExecutionResult:
     job_status: JobStatus
     run_status: str
     event_count: int
+    approval_state: ApprovalState = ApprovalState.NOT_REQUIRED
     result_summary: str | None = None
     error_summary: str | None = None
     output_snapshot: dict[str, Any] | None = None
@@ -205,6 +208,102 @@ class ExecutionService:
         )
         self.event_log_service.log_job_created(job)
 
+        if requires_confirmation(request_context.command_name):
+            return self._gate_for_confirmation(request_context, job)
+
+        return self._execute_run_for_job(request_context, job)
+
+    def _gate_for_confirmation(
+        self, request_context: RequestContext, job: Job
+    ) -> ExecutionResult:
+        """Park a high-impact Job pending human confirmation; run nothing yet."""
+        previous_job_status = job.status.value
+        job = self.job_service.mark_waiting_for_approval(job.job_id)
+        self.event_log_service.log_job_status_changed(job, previous_job_status)
+        self.event_log_service.log_event(
+            project_key=job.project_key,
+            entity_type="job",
+            entity_id=job.job_id,
+            event_type="confirmation_requested",
+            message=f"Job {job.job_id} is awaiting confirmation",
+            payload_json={"command_name": request_context.command_name or ""},
+        )
+        event_count = len(self.event_log_service.list_for_entity(job.project_key, "job", job.job_id))
+        return ExecutionResult(
+            job_id=job.job_id,
+            run_id="",
+            job_status=job.status,
+            run_status="",
+            event_count=event_count,
+            approval_state=job.approval_state,
+            result_summary=job.result_summary,
+            error_summary=job.error_summary,
+            output_snapshot=None,
+        )
+
+    def resume_confirmed_job(self, job_id: str) -> ExecutionResult:
+        """Approve a pending Job and resume it through the normal execution path."""
+        job = self.job_service.get_job(job_id)
+        request_context = self._request_context_from_job(job)
+        self.job_service.mark_approved(job_id)
+        result = self._execute_run_for_job(request_context, self.job_service.get_job(job_id))
+        self.event_log_service.log_event(
+            project_key=job.project_key,
+            entity_type="job",
+            entity_id=job_id,
+            event_type="confirmation_resolved",
+            message=f"Job {job_id} confirmation approved",
+            payload_json={"approval_state": ApprovalState.APPROVED.value},
+        )
+        result.approval_state = ApprovalState.APPROVED
+        result.event_count = len(self.event_log_service.list_for_entity(job.project_key, "job", job_id))
+        return result
+
+    def reject_job(self, job_id: str) -> ExecutionResult:
+        """Reject a pending Job: terminal, with no business write."""
+        job = self.job_service.get_job(job_id)
+        previous_job_status = job.status.value
+        job = self.job_service.mark_rejected(job_id)
+        self.event_log_service.log_job_status_changed(job, previous_job_status)
+        self.event_log_service.log_event(
+            project_key=job.project_key,
+            entity_type="job",
+            entity_id=job_id,
+            event_type="confirmation_resolved",
+            message=f"Job {job_id} confirmation rejected",
+            payload_json={"approval_state": ApprovalState.REJECTED.value},
+        )
+        event_count = len(self.event_log_service.list_for_entity(job.project_key, "job", job_id))
+        return ExecutionResult(
+            job_id=job.job_id,
+            run_id="",
+            job_status=job.status,
+            run_status="",
+            event_count=event_count,
+            approval_state=job.approval_state,
+            result_summary=job.result_summary,
+            error_summary=job.error_summary,
+            output_snapshot=None,
+        )
+
+    def _request_context_from_job(self, job: Job) -> RequestContext:
+        ctx = dict(job.context_json or {})
+        return RequestContext(
+            request_id=str(ctx.get("request_id") or job.request_id or job.job_id),
+            project_key=job.project_key,
+            source_type=str(ctx.get("source_type") or "telegram"),
+            source_user_id=ctx.get("source_user_id"),
+            source_chat_id=ctx.get("source_chat_id"),
+            source_message_id=ctx.get("source_message_id"),
+            command_name=ctx.get("command_name"),
+            command_body=ctx.get("command_body"),
+            request_text=ctx.get("request_text") or job.input_text,
+            reply_to_message_id=ctx.get("reply_to_message_id"),
+        )
+
+    def _execute_run_for_job(
+        self, request_context: RequestContext, job: Job
+    ) -> ExecutionResult:
         run = self.run_service.create_run(
             job_id=job.job_id,
             project_key=job.project_key,

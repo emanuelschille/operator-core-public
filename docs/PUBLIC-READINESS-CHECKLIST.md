@@ -51,7 +51,7 @@ called out rather than hidden.
 - [x] **Suite is reliably collectable and green.** Duplicate `test_service.py` basenames
       previously interrupted collection (hiding the real result); fixed via
       `--import-mode=importlib` and `pythonpath=["src"]` in `pyproject.toml`. Current result:
-      **1004 passed, 122 skipped, 38 xfailed, exit 0** (`python -m pytest -q`).
+      **1026 passed, 122 skipped, 38 xfailed, exit 0** (`python -m pytest -q`).
 - [x] **Skips/xfails are honest, not hidden.** `tests/conftest.py` documents two expected
       failure classes on this snapshot and handles them transparently:
     - **122 skipped — missing private fixtures.** Tests that need the excluded
@@ -71,9 +71,10 @@ called out rather than hidden.
 ## Final recommendation
 
 **READY_AS_PORTFOLIO_SNAPSHOT** — suitable to share as a viewing/portfolio link now.
-The test/CI gate is now met (green suite + CI workflow). The remaining honest gap is the
-documented test/code drift and the documented-but-unimplemented confirmation subsystem
-(see the alignment report below).
+The test/CI gate is met (green suite + CI workflow) and the confirmation/approval subsystem — the
+former centerpiece gap — is now implemented and tested. The remaining honest items are the
+documented test/code drift and the continuation/parent-link roadmap (see the alignment report
+below).
 
 ---
 
@@ -88,14 +89,15 @@ treat code as the source of truth).
 | # | Invariant (as documented) | Verdict | Evidence |
 |---|---|---|---|
 | 1 | Only `job_service` writes `job_status` | ✅ verified | `core/backbone/job_service.py:120-125` `_set_status` is the sole mutator of `Job.status`; `execution_service.py` only calls `job_service.mark_*`; no other `.status =` on a `Job`. |
-| 2 | `approval_state` + parent/continuation links owned by `job_service` | ⚠️ flagged — **not implemented** | `core/backbone/models.py:33-50`: `Job` has **no** `approval_state`, `parent_job_id`, `continuation_of_job_id`, or `current_run_id` (only `latest_run_id`). Confirmation/continuation is documented as architecture but absent from this snapshot. |
+| 2a | `approval_state` owned by `job_service` | ✅ fixed (now implemented) | `core/backbone/models.py` `ApprovalState` on `Job`; `core/backbone/job_service.py` `mark_waiting_for_approval`/`mark_approved`/`mark_rejected` are the sole writers. |
+| 2b | parent/continuation links owned by `job_service` | ⚠️ flagged — **roadmap** | `Job` still has no `parent_job_id`/`continuation_of_job_id`. A clean implementation needs reply→prior-Job correlation the snapshot does not yet track; left as roadmap rather than half-built. |
 | 3 | Only `run_service` writes `run_status` + run timing | ✅ verified | `core/backbone/run_service.py` is the sole mutator; `Run.started_at/finished_at/duration_ms` (`models.py:60-66`); `execution_service` calls `run_service.mark_*` only. |
 | 4 | Only `event_log_service` writes the `Events` table | ✅ verified | Only `event_log_service` uses `EventRepository`. Lanes emit **through** it (`core/content_ops/correction_capture.py:680` `self._event_log.log_event(...)`), never writing the repo directly. |
 | 5 | Only the project resolver determines the project key | ✅ verified (naming note) | Zero `resolved_project_key =` outside the resolver. **Note:** the field is `ResolvedProjectContext.project_key` (`core/project_resolver.py:8-10`), not `resolved_project_key`, and resolution is from runtime config — simpler than the multi-source reply/chat-conflict logic the docs describe. |
 | 6 | All Airtable writes go through `airtable_service`; lanes never call Airtable directly | ✅ verified | `airtable_service` is the only module using an HTTP/urllib client for Airtable; every `create_record`/`update_record` caller goes through it. `content_ops` calls `airtable_service` (through the adapter), never the raw Airtable API. |
 | 7 | Lanes never write `Jobs`/`Runs`/`Events`/`job_status`/`approval_state` | ✅ verified | `affiliate_ops`, `funnel_ops`, `knowledge_ops`, `review_ops`: **0** workflow-state hits. `content_ops` only emits events via `event_log_service`. |
 | 8 | `content_stage`←`content_ops`; `monetization_stage`←`affiliate_ops`/`funnel_ops`; `review_outcome`←`review_ops` | ⚠️ flagged — **intent, not literal** | These semantic field keys barely appear as literals in the snapshot; lanes write **dynamic** field dicts (e.g. `core/content_ops/service.py:2395`). The *negative* invariant holds (no shared-core module writes them); the *positive* ownership is architectural intent, not hard-coded here. |
-| 9 | Confirmation model / `rules_engine` / `waiting_for_approval` / `/confirm` / `/reject` | ⚠️ flagged — **not implemented** | **0** code hits for confirmation logic; no `rules_engine` module; `JobStatus` (`core/backbone/statuses.py`) has no `WAITING_FOR_APPROVAL`. Documented as architecture; not present in this snapshot. |
+| 9 | Confirmation model / `rules_engine` / `waiting_for_approval` / `/confirm` / `/reject` | ✅ fixed (now implemented) | `core/rules_engine.py` decides; `execution_service` gates (`_gate_for_confirmation`, `resume_confirmed_job`, `reject_job`); `JobStatus.WAITING_FOR_APPROVAL` + terminal `REJECTED`; `event_log_service` writes `confirmation_requested`/`confirmation_resolved`. Tests: `tests/core/backbone/test_confirmation_gate.py`, `tests/core/request_flow/test_confirmation_flow.py`. |
 
 ### Module-name reconciliation (doc → real code)
 
@@ -105,7 +107,7 @@ docs are being corrected to the real paths (see `docs/02` code map):
 | Documented name | Real location |
 |---|---|
 | `telegram_gateway` | `interfaces/telegram/entry_flow.py`, `interfaces/telegram/poller.py`, `integrations/telegram_service.py` |
-| `rules_engine` | **not implemented** (no policy/confirmation engine in this snapshot) |
+| `rules_engine` | `core/rules_engine.py` (confirmation policy — now implemented) |
 | `llm_service` | `integrations/anthropic_service.py`, `integrations/openai_service.py` |
 | `knowledge_state_ops` | `core/knowledge_ops/service.py` |
 | `review_analytics_ops` | `core/review_ops/service.py` (+ `core/evaluation/review_service.py`) |
@@ -114,9 +116,10 @@ docs are being corrected to the real paths (see `docs/02` code map):
 | *(undocumented)* `request_flow` | `core/request_flow/service.py` — the Telegram-handoff request orchestrator |
 
 ### Net result
-The **hard single-writer invariants that are implemented** (job/run/event ownership, the
-Airtable write boundary, lane isolation, single project resolver) all **hold in code**. The
-items that did **not** match were the *aspirational* parts of the docs — confirmation/approval,
-continuation links, a `rules_engine`, multi-source project resolution, and literal
-semantic-field ownership. Those are corrected in `docs/02`/`docs/03` and reflected in an honest
+All **hard single-writer invariants hold in code** (job/run/event ownership, the Airtable write
+boundary, lane isolation, single project resolver). The **confirmation/approval subsystem** — the
+largest former gap — is now **built behind those same single-writer rules** (`rules_engine`,
+`approval_state`, the `waiting_for_approval` gate, `/confirm` · `/reject`), so invariants 2a and 9
+flip to ✅. The parts still on the **roadmap** are continuation/parent links (2b), multi-source
+project resolution, and literal semantic-field ownership — each flagged honestly in the
 **Status and roadmap** section rather than presented as current truth.

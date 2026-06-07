@@ -27,15 +27,15 @@ This file is authoritative for module ownership of workflow actions and state tr
 > |---|---|
 > | `telegram_gateway` | `interfaces/telegram/` + `integrations/telegram_service.py` |
 > | `llm_service` | `integrations/anthropic_service.py`, `integrations/openai_service.py` |
-> | `rules_engine` | **not implemented in this snapshot** (see note 2) |
+> | `rules_engine` | `core/rules_engine.py` (confirmation policy) |
 > | `knowledge_ops`, `review_ops`, `funnel_ops` | `core/knowledge_ops`, `core/review_ops`, `core/funnel_ops` |
 > | *(orchestrators, not listed historically)* | `core/request_flow/service.py`, `core/backbone/execution_service.py` |
 >
-> **2 · Documented but not implemented (planned).** The **confirmation / approval** subsystem
-> below — `rules_engine`, `approval_state`, `job_status=waiting_for_approval`, `/confirm`,
-> `/reject`, and continuation/parent links — describes the *intended* design. It is **not**
-> present in this snapshot's code. Those sections are kept as a design record and are explicitly
-> flagged where they appear; treat them as roadmap, not current behaviour.
+> **2 · Implemented vs roadmap.** The **confirmation / approval** subsystem below —
+> `rules_engine`, `approval_state`, `job_status=waiting_for_approval`, `/confirm`, `/reject` — is
+> **implemented** (see [`02-architecture-overview.md`](02-architecture-overview.md#confirmation-flow)).
+> The only part still on the **roadmap** is **continuation / parent links**
+> (`continuation_of_job_id` / `parent_job_id`), flagged where it appears below.
 
 ## Responsibility model
 
@@ -87,9 +87,9 @@ No other module may write these tables directly.
 Only `job_service` may write:
 - `job_id`
 - `job_status` *(implemented as `Job.status`)*
-- `approval_state` *(planned — not on the `Job` model in this snapshot)*
-- `parent_job_id` *(planned — not implemented)*
-- `continuation_of_job_id` *(planned — not implemented)*
+- `approval_state` *(implemented — `ApprovalState` on the `Job` model)*
+- `parent_job_id` *(roadmap — not implemented)*
+- `continuation_of_job_id` *(roadmap — not implemented)*
 - `current_run_id` *(implemented as `latest_run_id`)*
 
 Only `run_service` may write:
@@ -120,9 +120,9 @@ outside `project_resolver`.)*
 
 ### Confirmation ownership
 
-> **Planned, not implemented in this snapshot.** There is no `rules_engine`, no
-> `approval_state`, and no `waiting_for_approval` status in the code. This section is a design
-> record for the intended confirmation subsystem.
+> **Implemented.** `rules_engine` (`core/rules_engine.py`) decides; `job_service` owns
+> `approval_state` and the `waiting_for_approval` status; `execution_service` gates the run and
+> `event_log_service` records `confirmation_requested` / `confirmation_resolved`.
 
 `rules_engine` decides whether confirmation is required.
 
@@ -457,9 +457,9 @@ It does not own workflow control.
 
 ## `rules_engine`
 
-> **Planned, not implemented in this snapshot.** No `rules_engine` module exists in the code.
-> The description below is the intended policy layer (confirmation decisions, write-boundary
-> validation) kept as a design record.
+> **Implemented as `core/rules_engine.py`.** The snapshot ships the confirmation-decision part
+> (`requires_confirmation` over a declared high-impact command set); broader write-boundary
+> validation described below remains a design target.
 
 ### Responsibility
 Owns rule validation and execution boundaries.
@@ -738,10 +738,11 @@ The original Job is not overwritten by the continuation request.
 
 ## Confirmation-required request
 
-> **Planned, not implemented in this snapshot.** The three confirmation flows below
-> (confirmation-required, approval, rejection) describe the intended `/confirm` · `/reject`
-> design. No confirmation code path exists yet — see the Status and roadmap in
-> [`02-architecture-overview.md`](02-architecture-overview.md).
+> **Implemented.** The three confirmation flows below (confirmation-required, approval,
+> rejection) match the code: see the
+> [confirmation flow diagram](02-architecture-overview.md#confirmation-flow) and the tests under
+> `tests/core/backbone/test_confirmation_gate.py` and
+> `tests/core/request_flow/test_confirmation_flow.py`.
 
 For a request that requires confirmation:
 
