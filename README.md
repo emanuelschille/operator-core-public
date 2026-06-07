@@ -7,6 +7,11 @@ workflows: a Python core engine, a messaging interface for the operator, an
 operational state layer, and modular workflow lanes for content, affiliate,
 funnel, and review operations.
 
+![Operator Core layered architecture: Telegram interface → shared core (request_flow, command_router, project_resolver, backbone) → lane modules, with a workflow-state layer (Jobs/Runs/Events), an Airtable business-state layer, and a structured model-assistance layer.](docs/diagrams/operator-core-architecture.png)
+
+> The full architecture — diagrams, a worked example, trade-offs, and the
+> confirmation flow — is in [`docs/02-architecture-overview.md`](docs/02-architecture-overview.md).
+
 > **About this repository.** This is a **cleaned, public portfolio snapshot** of a
 > larger private project. It contains the engine source, the test suite, and a set of
 > architecture/portfolio documents. Internal business and strategy material, local
