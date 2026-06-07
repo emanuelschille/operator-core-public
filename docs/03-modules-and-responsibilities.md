@@ -14,6 +14,29 @@ The goal is to make the shared core and the lane modules work together in a way 
 
 This file is authoritative for module ownership of workflow actions and state transitions.
 
+> ### How to read this file (snapshot reconciliation)
+>
+> Start from [`02-architecture-overview.md`](02-architecture-overview.md) — it is the baseline,
+> with diagrams, a worked example, and an honest **Status and roadmap**. This file is the deep
+> per-module companion. Two reconciliations apply throughout, verified against the code in the
+> **Code–Doc Alignment report** in [`PUBLIC-READINESS-CHECKLIST.md`](PUBLIC-READINESS-CHECKLIST.md):
+>
+> **1 · Module names → real code.** Some role names below do not match the file tree:
+>
+> | Name used here | Real location |
+> |---|---|
+> | `telegram_gateway` | `interfaces/telegram/` + `integrations/telegram_service.py` |
+> | `llm_service` | `integrations/anthropic_service.py`, `integrations/openai_service.py` |
+> | `rules_engine` | **not implemented in this snapshot** (see note 2) |
+> | `knowledge_ops`, `review_ops`, `funnel_ops` | `core/knowledge_ops`, `core/review_ops`, `core/funnel_ops` |
+> | *(orchestrators, not listed historically)* | `core/request_flow/service.py`, `core/backbone/execution_service.py` |
+>
+> **2 · Documented but not implemented (planned).** The **confirmation / approval** subsystem
+> below — `rules_engine`, `approval_state`, `job_status=waiting_for_approval`, `/confirm`,
+> `/reject`, and continuation/parent links — describes the *intended* design. It is **not**
+> present in this snapshot's code. Those sections are kept as a design record and are explicitly
+> flagged where they appear; treat them as roadmap, not current behaviour.
+
 ## Responsibility model
 
 Operator Core uses one main service with separated internal modules.
@@ -63,11 +86,11 @@ No other module may write these tables directly.
 
 Only `job_service` may write:
 - `job_id`
-- `job_status`
-- `approval_state`
-- `parent_job_id`
-- `continuation_of_job_id`
-- `current_run_id`
+- `job_status` *(implemented as `Job.status`)*
+- `approval_state` *(planned — not on the `Job` model in this snapshot)*
+- `parent_job_id` *(planned — not implemented)*
+- `continuation_of_job_id` *(planned — not implemented)*
+- `current_run_id` *(implemented as `latest_run_id`)*
 
 Only `run_service` may write:
 - `run_id`
@@ -86,14 +109,20 @@ Only `event_log_service` may write:
 ### Project context ownership
 
 Only `project_resolver` may determine:
-- `resolved_project_key`
-- project-context conflicts
-- whether explicit, reply-based, or chat-level context is valid
+- `resolved_project_key` *(implemented as `ResolvedProjectContext.project_key`)*
+- project-context conflicts *(planned)*
+- whether explicit, reply-based, or chat-level context is valid *(planned — the snapshot
+  resolves from runtime configuration only)*
 
 Other modules may consume resolved project context.
-Other modules must not silently override it.
+Other modules must not silently override it. *(Verified: no module assigns the project key
+outside `project_resolver`.)*
 
 ### Confirmation ownership
+
+> **Planned, not implemented in this snapshot.** There is no `rules_engine`, no
+> `approval_state`, and no `waiting_for_approval` status in the code. This section is a design
+> record for the intended confirmation subsystem.
 
 `rules_engine` decides whether confirmation is required.
 
@@ -143,7 +172,7 @@ Must not be written directly by:
 ### `monetization_stage`
 Owned by:
 - `affiliate_ops` for content-related monetization progression
-- `funnel_website_ops` for funnel/page-related monetization progression
+- `funnel_ops` for funnel/page-related monetization progression
 
 May be written on:
 - `Content Ideas`
@@ -158,7 +187,7 @@ Must not be written directly by shared core modules.
 
 ### `review_outcome`
 Owned by:
-- `review_analytics_ops`
+- `review_ops`
 
 May be written on:
 - `Reviews`
@@ -167,7 +196,7 @@ Must not be written directly by shared core modules.
 
 ### Project truth records
 `Project State` records are owned by:
-- `knowledge_state_ops`
+- `knowledge_ops`
 
 Other lane modules may propose learnings or rule candidates.
 They must not directly mutate project truth without going through the explicit knowledge-state path.
@@ -428,6 +457,10 @@ It does not own workflow control.
 
 ## `rules_engine`
 
+> **Planned, not implemented in this snapshot.** No `rules_engine` module exists in the code.
+> The description below is the intended policy layer (confirmation decisions, write-boundary
+> validation) kept as a design record.
+
 ### Responsibility
 Owns rule validation and execution boundaries.
 
@@ -460,8 +493,8 @@ Owns operator-facing response shaping.
 
 ### Must do
 - format responses according to response-state contract
-- keep Julia-facing responses concise and practical
-- keep Emanuel-facing responses more inspectable where needed
+- keep Operator (Julia)-facing responses concise and practical
+- keep Maintainer (Emanuel)-facing responses more inspectable where needed
 - preserve clarity about:
   - what was saved
   - what is pending
@@ -559,7 +592,7 @@ Owns monetization-support logic for content and offers.
 ### Notes
 `affiliate_ops` owns monetization progression on content-related records once monetization work is actually being performed.
 
-## `knowledge_state_ops`
+## `knowledge_ops`
 
 ### Responsibility
 Owns durable project-truth writing.
@@ -583,7 +616,7 @@ Owns durable project-truth writing.
 ### Notes
 This lane is the only business lane that may mutate `Project State` directly.
 
-## `review_analytics_ops`
+## `review_ops`
 
 ### Responsibility
 Owns review and learning-output logic.
@@ -609,7 +642,7 @@ Owns review and learning-output logic.
 ### Notes
 If review learning should become durable project truth, that transition must happen through the knowledge-state path.
 
-## `funnel_website_ops`
+## `funnel_ops`
 
 ### Responsibility
 Owns funnel and page-planning logic.
@@ -632,7 +665,7 @@ Owns funnel and page-planning logic.
 - write Jobs, Runs, or Events directly
 
 ### Notes
-`funnel_website_ops` owns page/funnel business semantics, not shared workflow state.
+`funnel_ops` owns page/funnel business semantics, not shared workflow state.
 
 ## Workflow ownership by action type
 
@@ -704,6 +737,11 @@ For a continuation request:
 The original Job is not overwritten by the continuation request.
 
 ## Confirmation-required request
+
+> **Planned, not implemented in this snapshot.** The three confirmation flows below
+> (confirmation-required, approval, rejection) describe the intended `/confirm` · `/reject`
+> design. No confirmation code path exists yet — see the Status and roadmap in
+> [`02-architecture-overview.md`](02-architecture-overview.md).
 
 For a request that requires confirmation:
 
@@ -850,14 +888,14 @@ Inspection must not silently mutate business records.
 - `Offer Mappings`
 - content-related `monetization_stage`
 
-### `knowledge_state_ops`
+### `knowledge_ops`
 - `Project State`
 
-### `review_analytics_ops`
+### `review_ops`
 - `Reviews`
 - `review_outcome`
 
-### `funnel_website_ops`
+### `funnel_ops`
 - `Funnel Pages`
 - page planning fields
 - page-level `monetization_stage`
