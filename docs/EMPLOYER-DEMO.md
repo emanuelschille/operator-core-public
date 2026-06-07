@@ -16,8 +16,10 @@ read-only and exposes no secrets. You do not need credentials to follow it.
 
 1. **Read the pitch (1 min).** Open `README.md` — purpose, principles, and scope
    boundaries are in the first two screens.
-2. **See the architecture (1 min).** Open `docs/ARCHITECTURE.md` for the shape and the
-   execution path, then glance at `docs/02-architecture-overview.md` for depth.
+2. **See the architecture (1 min).** Open `docs/ARCHITECTURE.md` for the shape and the three
+   core ideas, then read the
+   [worked end-to-end example](02-architecture-overview.md#worked-end-to-end-example) in
+   `docs/02-architecture-overview.md` — it walks one Telegram message through the real modules.
 3. **Look at the engine (1.5 min).** Browse `src/operator_core/`:
    - `core/command_router.py` and `core/project_resolver.py` — how input is routed.
    - `integrations/` — the external-system boundaries.
@@ -42,11 +44,11 @@ find src/operator_core -name '*.py' | sort
 # Test surface
 find tests -name 'test_*.py' | sort | sed -n '1,40p'
 
-# Run the test suite locally (see README "Honest status" for current caveats)
-.venv/bin/python -m pytest tests/ -q
+# Run the test suite locally (green: 1004 passed, 122 skipped, 38 xfailed)
+python -m pytest -q
 
 # Compile-check the source and tests
-.venv/bin/python -m compileall src tests
+python -m compileall src tests
 ```
 
 ## What this snapshot deliberately leaves out

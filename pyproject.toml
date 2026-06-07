@@ -18,3 +18,12 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# pytest is a dev/test-only concern; the runtime keeps `dependencies = []`.
+[tool.pytest.ini_options]
+# Make `src/` importable without an editable install or PYTHONPATH wiring.
+pythonpath = ["src"]
+# importlib import mode lets same-named test files (e.g. several `test_service.py`)
+# coexist without the historical "import file mismatch" collection errors.
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
